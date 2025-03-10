@@ -21,13 +21,22 @@ def get_course_info():
             course_description = get_course_description(full_course_link)
             study_options = get_study_options(full_course_link)
 
+            # Debugging: Print course link before fetching details
+            print(f"Fetching details for: {full_course_link}")
+
+            num_modules, num_topics, course_duration = get_course_details(full_course_link)
+
+            # Ensure keys exist
             unique_courses.append({
                 "Course Name": course_name,
-                "Course Description": course_description,
-                "Study Options": study_options
+                "Course Description": course_description or "Not available",
+                "Study Options": study_options or "Not available",
+                "Modules": num_modules or "Not found",
+                "Topics": num_topics or "Not found",
+                "Duration": course_duration.get('Duration', 'Not found')  # Only Duration as plain text
             })
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f"Error occurred for {course_name}: {e}")
 
     return unique_courses
 
@@ -72,17 +81,70 @@ def get_study_options(course_url):
         return "Error fetching study options"
 
 
+def get_course_details(course_url):
+    try:
+        response = requests.get(course_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Пошук всіх модулів
+        modules_list = soup.find('ul', class_='CourseModulesList_modulesList__C86yL')
+        modules = modules_list.find_all('li', class_='color-dark-blue') if modules_list else []
+
+        # Підрахунок кількості модулів
+        num_modules = len(modules) if modules else "Not found"
+
+        # Підрахунок кількості тем
+        num_topics = 0
+        for module in modules:
+            topic_count_text = module.find('p',
+                                           class_='CourseModulesList_topicsCount__H_fv3 typography_textMain__oRJ69')
+            if topic_count_text:
+                num_topics += int(topic_count_text.text.strip().split(' ')[0])  # Беремо лише число перед словом "тем"
+
+        # Пошук тривалості курсу в елементах "Тривалість"
+        duration_section = soup.find_all('div', class_='TableFeedView_rowWithButtons__j6_7p')
+
+        # Ініціалізуємо змінні для тривалості
+        full_time_duration = "Not found"
+        flex_time_duration = "Not found"
+
+        # Проходимо по знайдених елементах і шукаємо "Тривалість"
+        for row in duration_section:
+            title = row.find('div', class_='TableFeedView_rowTitle__X_wrw')
+            content = row.find('div', class_='TableFeedView_rowContent__Nih2n')
+
+            if title and content:
+                title_text = title.text.strip()
+                content_text = content.text.strip()
+
+                # Якщо це "Тривалість"
+                if "Тривалість" in title_text:
+                    # Витягуємо тривалість
+                    full_time_duration = content_text
+
+        # Повертаємо знайдені дані
+        return num_modules, num_topics, {"Duration": full_time_duration}
+
+    except Exception as e:
+        print(f"Error fetching course details: {e}")
+        return "Error", "Error", {"Duration": "Error"}
+
+
 def print_courses(courses_info):
     table = PrettyTable()
 
-    table.field_names = ["Course Name", "Course Description", "Study Options"]
+    # Додаємо нові поля для відображення
+    table.field_names = ["Course Name", "Course Description", "Study Options", "Modules", "Topics", "Duration"]
 
     # Додаємо інформацію про курси в таблицю
     for course in courses_info:
         table.add_row([
             course['Course Name'],
             course['Course Description'],
-            course['Study Options']
+            course['Study Options'],
+            course['Modules'],
+            course['Topics'],
+            course['Duration']  # Виводимо Duration без ключа
         ])
 
     # Виводимо таблицю
@@ -92,13 +154,14 @@ def print_courses(courses_info):
 def save_to_csv(courses_info, filename='courses_info.csv'):
     # Відкриваємо CSV файл для запису
     with open(filename, 'w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=["Course Name", "Course Description", "Study Options"])
+        writer = csv.DictWriter(file, fieldnames=["Course Name", "Course Description", "Study Options", "Modules", "Topics", "Duration"])
         writer.writeheader()
 
         for course in courses_info:
             writer.writerow(course)
 
 
+# Викликаємо основну функцію
 courses_info = get_course_info()
 print_courses(courses_info)
-save_to_csv(courses_info)
+# save_to_csv(courses_info)  # Якщо потрібно зберегти в CSV
